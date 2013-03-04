@@ -82,13 +82,11 @@ main =
          editWidget >>= \edit ->
          edit `onActivate` (produce_msg chan xcg_chat qname me) >>
          newList def_attr >>= \lst ->
-         setup_list_hander lst >>
+         setup_list_handler lst >>
          (vLimit 26 =<< centered =<< vLimit 25 =<< vBox lst edit) >>=
              bordered >>= \cen ->
          newFocusGroup >>= \fg ->
-         fg `onKeyPressed` (\_ k _ ->
-             if k == KEsc then closeConnection conn >> exitSuccess
-             else return False) >>
+         setup_fg_handler conn fg >>
          addToFocusGroup fg edit >>
          newCollection >>= \col ->
          addToCollection col cen fg >>
@@ -98,9 +96,14 @@ main =
          runUi col defaultContext
 
 
+setup_fg_handler :: Connection -> Widget FocusGroup -> IO ()
+setup_fg_handler conn this =
+    this `onKeyPressed` (\_ k _ ->
+        if k == KEsc then closeConnection conn >> exitSuccess
+        else return False)
 
-setup_list_hander :: Widget (List String FormattedText) -> IO ()
-setup_list_hander this =
+setup_list_handler :: Widget (List String FormattedText) -> IO ()
+setup_list_handler this =
     this `onItemAdded` \(NewItemEvent i _ _) ->
         if i >= 24 then 
             removeFromList this 0 >> return ()
