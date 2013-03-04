@@ -120,7 +120,8 @@ produce_msg chan xcg rkey me this =
 consume_msg :: Widget (List String FormattedText) -> (Message, Envelope) 
                -> IO ()
 consume_msg this (m, e) = 
-    let s = BL.unpack $ msgBody m
+    let (name, _:msg) = span (/= ':') (BL.unpack $ msgBody m)
+        s = name ++ ": " ++ msg
     in  ackEnv e >>
         schedule (addToList this "" =<< plainText (T.pack s))
 
