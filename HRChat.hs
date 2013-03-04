@@ -68,7 +68,7 @@ connect m = case validation of
 main =
     putStrLn "User name? (No more than 10 chars; ':' is invalid)" >>
     take 10 `fmap` getLine >>= \me ->
-    if any (== ':') me then exitSuccess
+    if any (== ':') me || null me then exitSuccess
     else -- declare AMQP primitives
          readFile conf_name >>= \c ->
          connect (get_cconf c) >>= \conn ->
@@ -82,8 +82,9 @@ main =
          editWidget >>= \edit ->
          edit `onActivate` (produce_msg chan xcg_chat qname me) >>
          newList def_attr >>= \lst ->
-         vBox lst edit >>= \vbs ->
-         centered vbs >>= \cen ->
+         setup_list_hander lst >>
+         (vLimit 26 =<< centered =<< vLimit 25 =<< vBox lst edit) >>=
+             bordered >>= \cen ->
          newFocusGroup >>= \fg ->
          fg `onKeyPressed` (\_ k _ ->
              if k == KEsc then closeConnection conn >> exitSuccess
@@ -95,6 +96,15 @@ main =
          bindQueue chan qname xcg_chat "" >>
          consumeMsgs chan qname Ack (consume_msg lst) >>
          runUi col defaultContext
+
+
+
+setup_list_hander :: Widget (List String FormattedText) -> IO ()
+setup_list_hander this =
+    this `onItemAdded` \(NewItemEvent i _ _) ->
+        if i >= 24 then 
+            removeFromList this 0 >> return ()
+        else return ()
 
 
 produce_msg :: Channel -> String -> String -> String -> Widget Edit -> IO ()
@@ -109,10 +119,10 @@ produce_msg chan xcg rkey me this =
 
 consume_msg :: Widget (List String FormattedText) -> (Message, Envelope) 
                -> IO ()
-consume_msg w (m, e) = 
+consume_msg this (m, e) = 
     let s = BL.unpack $ msgBody m
     in  ackEnv e >>
-        schedule (addToList w s =<< plainText (T.pack s))
+        schedule (addToList this "" =<< plainText (T.pack s))
 
 
 
