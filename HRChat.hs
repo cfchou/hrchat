@@ -54,47 +54,62 @@ get_cconf s =
               | 2 <= length ss = M.insert (ss !! 0) (ss !! 1) m
               | otherwise = m
  
-connect :: M.Map String String -> IO Connection
-connect m = case validation of
-                 Nothing -> fail "Error: hostname/vhost/user/password?"
-                 Just (h, v, u, p) -> openConnection h v u p
-    where validation = M.lookup "hostname" m >>= \hostname ->  
+
+data Fanout = Fanout { conn :: Connection
+                     , chan :: Channel
+                     , qopts :: QueueOpts
+                     , xopts :: ExchangeOpts
+                     }
+
+declare_fanout :: M.Map String String -> IO Fanout
+declare_fanout m =
+    let qo = newQueue { queueExclusive = True }
+        xo = newExchange { exchangeName = xcg_chat
+                         , exchangeType = "fanout" }
+    in  connect m >>= \conn ->
+        openChannel conn >>= \chan ->
+        declareQueue chan qo >>= \(qname, _, _) ->
+        declareExchange chan xo >>
+        bindQueue chan qname xcg_chat "" >> -- fanout ignores binding key
+        return (Fanout conn chan (qo { queueName = qname }) xo)
+    where connect m =
+              case validation of
+                  Nothing -> fail "Error: hostname/vhost/user/password?"
+                  Just (h, v, u, p) -> openConnection h v u p
+          validation = M.lookup "hostname" m >>= \hostname ->  
                        M.lookup "vhost" m >>= \vhost ->
                        M.lookup "user" m >>= \user ->
                        M.lookup "password" m >>= \password ->
                        return (hostname, vhost, user, password)
 
-
 main =
     putStrLn "User name? (No more than 10 chars; ':' is invalid)" >>
     take 10 `fmap` getLine >>= \me ->
     if any (== ':') me || null me then exitSuccess
-    else -- declare AMQP primitives
-         readFile conf_name >>= \c ->
-         connect (get_cconf c) >>= \conn ->
-         openChannel conn >>= \chan ->
-         declareQueue chan
-             newQueue { queueExclusive = True } >>= \(qname, _, _) ->
-         declareExchange chan
-             newExchange { exchangeName = xcg_chat
-                         , exchangeType = "fanout" } >>
+    else readFile conf_name >>= \c ->
+         declare_fanout (get_cconf c) >>= \fo ->
+
          -- compose ui
          editWidget >>= \edit ->
-         edit `onActivate` (produce_msg chan xcg_chat qname me) >>
+         setup_edit_handler fo me edit >>
          newList def_attr >>= \lst ->
          setup_list_handler lst >>
          (vLimit 26 =<< centered =<< vLimit 25 =<< vBox lst edit) >>=
              bordered >>= \cen ->
          newFocusGroup >>= \fg ->
-         setup_fg_handler conn fg >>
+         setup_fg_handler (conn fo) fg >>
          addToFocusGroup fg edit >>
          newCollection >>= \col ->
          addToCollection col cen fg >>
 
-         bindQueue chan qname xcg_chat "" >>
-         consumeMsgs chan qname Ack (consume_msg lst) >>
+         consumeMsgs (chan fo) (queueName $ qopts fo) Ack (consume_msg lst) >>
          runUi col defaultContext
 
+
+
+setup_edit_handler :: Fanout -> String -> Widget Edit -> IO ()
+setup_edit_handler fo me this =
+    this `onActivate` produce_msg fo me >> return ()
 
 setup_fg_handler :: Connection -> Widget FocusGroup -> IO ()
 setup_fg_handler conn this =
@@ -110,15 +125,14 @@ setup_list_handler this =
         else return ()
 
 
-produce_msg :: Channel -> String -> String -> String -> Widget Edit -> IO ()
-produce_msg chan xcg rkey me this =
+produce_msg :: Fanout -> String -> Widget Edit -> IO ()
+produce_msg fo me this =
     getEditText this >>= \txt ->
     let s = me ++ (':' : T.unpack txt)
-    in  publishMsg chan xcg rkey
+    in  publishMsg (chan fo) (exchangeName $ xopts fo) ""
             newMsg { msgBody = BL.pack s
                    , msgDeliveryMode = Just NonPersistent } >>
         setEditText this (T.pack "")
-
 
 consume_msg :: Widget (List String FormattedText) -> (Message, Envelope) 
                -> IO ()
