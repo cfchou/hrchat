@@ -8,7 +8,6 @@
 import System.IO
 import System.Exit ( exitSuccess )
 import System.Environment
---import Control.Concurrent
 import Control.Monad
 import qualified Data.Map as M
 import qualified Data.ByteString.Lazy.Char8 as BL
@@ -56,41 +55,56 @@ main =
     take hmax_name `fmap` getLine >>= \me ->
     if any (== ':') me || null me then exitSuccess
     else readFile conf_name >>= \c ->
-         declare_fanout (get_cconf c) >>= \fo ->
+         connect (get_cconf c) >>= \(conn, chan) ->
+         declare_fanout conn chan >>= \fo ->
+         declare_ctrl_client conn chan >>= \drct ->
+         logon_msg drct True me >>
 
          compose_ui >>= \ui ->
          setup_edit_handler fo me (edit ui) >>
-         setup_list_handler (conv ui) >>
-         setup_fg_handler (conn fo) (fg ui) >>
-         consumeMsgs (chan fo) (queueName $ qopts fo) Ack 
-             (consume_msg ui) >>
-         runUi (col ui) defaultContext
+         setup_conv_handler (conv ui) >>
+         setup_fg_handler drct me (fg ui) >>
 
+         consumeMsgs chan (queueName $ fqopts fo) Ack 
+             (consume_msg ui) >>
+         consumeMsgs chan (queueName $ dqopts drct) Ack 
+             (consume_msg_direct ui) >>
+         runUi (col ui) defaultContext
 
 
 setup_edit_handler :: Fanout -> String -> Widget Edit -> IO ()
 setup_edit_handler fo me this =
     this `onActivate` produce_msg fo me >> return ()
 
-setup_fg_handler :: Connection -> Widget FocusGroup -> IO ()
-setup_fg_handler conn this =
+setup_fg_handler :: Direct -> String -> Widget FocusGroup -> IO ()
+setup_fg_handler drct me this =
     this `onKeyPressed` (\_ k _ ->
-        if k == KEsc then closeConnection conn >> exitSuccess
+        if k == KEsc then
+            logon_msg drct False me >>
+            closeConnection (dconn drct) >> exitSuccess
         else return False)
 
-setup_list_handler :: Widget (List String FormattedText) -> IO ()
-setup_list_handler this =
+setup_conv_handler :: Widget (List String FormattedText) -> IO ()
+setup_conv_handler this =
     this `onItemAdded` \(NewItemEvent i _ _) ->
         if i >= vmax_app - 2 then 
             removeFromList this 0 >> return ()
         else return ()
 
+-- send server logon or logoff msg
+logon_msg :: Direct -> Bool -> String -> IO ()
+logon_msg drct onoff me =
+    let s = ':' : (if onoff then '+' : me else '-' : me)
+    in  publishMsg (dchan drct) (exchangeName $ dxopts drct) bkey_server
+            newMsg { msgBody = BL.pack s
+                   , msgDeliveryMode = Just NonPersistent }
+ 
 
 produce_msg :: Fanout -> String -> Widget Edit -> IO ()
 produce_msg fo me this =
     getEditText this >>= \txt ->
     let s = me ++ (':' : T.unpack txt)
-    in  publishMsg (chan fo) (exchangeName $ xopts fo) ""
+    in  publishMsg (fchan fo) (exchangeName $ fxopts fo) ""
             newMsg { msgBody = BL.pack s
                    , msgDeliveryMode = Just NonPersistent } >>
         setEditText this (T.pack "")
@@ -102,5 +116,7 @@ consume_msg ui (m, e) =
     in  ackEnv e >>
         schedule (addToList (conv ui) "" =<< plainText (T.pack s))
 
+consume_msg_direct :: MainUI -> (Message, Envelope) -> IO ()
+consume_msg_direct ui (m, e) = ackEnv e
 
 

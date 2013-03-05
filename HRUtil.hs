@@ -1,5 +1,7 @@
 
-module HRUtil (get_cconf, Fanout(..), declare_fanout) where
+module HRUtil ( get_cconf, connect, Fanout(..), declare_fanout, Direct(..)
+              , declare_ctrl_client, declare_ctrl_server
+              , bkey_client, bkey_server) where
 
 import Text.ParserCombinators.Parsec
 import qualified Data.Map as M
@@ -38,34 +40,66 @@ bare_string = many bare_char
 bare_char = noneOf "\n= "
 
 ---------------------------------
-xcg_chat = "room101"
+xcg_chat = "room101" -- for fanout exchange
+
+xcg_ctrl = "ctrl"    -- for direct exchange
+bkey_client = "for_client"
+bkey_server = "for_server"
+
  
 
-data Fanout = Fanout { conn :: Connection
-                     , chan :: Channel
-                     , qopts :: QueueOpts
-                     , xopts :: ExchangeOpts
+data Fanout = Fanout { fconn :: Connection
+                     , fchan :: Channel
+                     , fqopts :: QueueOpts
+                     , fxopts :: ExchangeOpts
                      }
 
-declare_fanout :: M.Map String String -> IO Fanout
-declare_fanout m =
-    let qo = newQueue { queueExclusive = True }
-        xo = newExchange { exchangeName = xcg_chat
-                         , exchangeType = "fanout" }
-    in  connect m >>= \conn ->
-        openChannel conn >>= \chan ->
-        declareQueue chan qo >>= \(qname, _, _) ->
-        declareExchange chan xo >>
-        bindQueue chan qname xcg_chat "" >> -- fanout ignores binding key
-        return (Fanout conn chan (qo { queueName = qname }) xo)
-    where connect m =
-              case validation of
-                  Nothing -> fail "Error: hostname/vhost/user/password?"
-                  Just (h, v, u, p) -> openConnection h v u p
-          validation = M.lookup "hostname" m >>= \hostname ->  
+connect :: M.Map String String -> IO (Connection, Channel)
+connect m =
+    case validation of
+        Nothing -> fail "Error: hostname/vhost/user/password?"
+        Just (h, v, u, p) -> openConnection h v u p >>= \conn ->
+                             openChannel conn >>= \chan ->
+                             return (conn, chan)
+    where validation = M.lookup "hostname" m >>= \hostname ->  
                        M.lookup "vhost" m >>= \vhost ->
                        M.lookup "user" m >>= \user ->
                        M.lookup "password" m >>= \password ->
                        return (hostname, vhost, user, password)
+
+declare_fanout :: Connection -> Channel -> IO Fanout
+declare_fanout conn chan =
+    let qo = newQueue { queueExclusive = True }
+        xo = newExchange { exchangeName = xcg_chat
+                         , exchangeType = "fanout" }
+    in  declareQueue chan qo >>= \(qname, _, _) ->
+        declareExchange chan xo >>
+        bindQueue chan qname xcg_chat "" >> -- fanout ignores binding key
+        return (Fanout conn chan (qo { queueName = qname }) xo)
+
+
+data Direct = Direct { dconn :: Connection
+                     , dchan :: Channel
+                     , dqopts :: QueueOpts
+                     , dxopts :: ExchangeOpts
+                     , bkey :: String
+                     }
+
+declare_ctrl :: String -> Connection -> Channel -> IO Direct
+declare_ctrl bkey conn chan =
+    let qo = newQueue { queueExclusive = True }
+        xo = newExchange { exchangeName = xcg_ctrl
+                         , exchangeType = "direct" }
+    in  declareQueue chan qo >>= \(qname, _, _) ->
+        declareExchange chan xo >>
+        bindQueue chan qname xcg_ctrl bkey >>
+        return (Direct conn chan (qo { queueName = qname }) xo bkey)
+
+declare_ctrl_client :: Connection -> Channel -> IO Direct
+declare_ctrl_client = declare_ctrl bkey_client
+
+declare_ctrl_server :: Connection -> Channel -> IO Direct
+declare_ctrl_server = declare_ctrl bkey_server
+
 
 
