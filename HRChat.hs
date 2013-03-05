@@ -82,28 +82,50 @@ declare_fanout m =
                        M.lookup "password" m >>= \password ->
                        return (hostname, vhost, user, password)
 
+data MainUI = MainUI { edit :: Widget Edit
+                     , conv :: Widget (List String FormattedText)
+                     , lst :: Widget (List String FormattedText)
+                     , fg :: Widget FocusGroup
+                     , col :: Collection
+                     }
+
+-- standard 80 * 40 terminal should be fine
+hmax_lst = 20 -- terminal should be more than 3 times wider than this
+hmax_name = hmax_lst - 10
+vmax_app = 30 -- terminal should be at least this height
+
+compose_ui :: IO MainUI
+compose_ui =
+    editWidget >>= \edit ->
+    newList def_attr >>= \conv ->
+    newList def_attr >>= \lst ->
+
+    (bordered =<< vLimit vmax_app =<< 
+        vBox conv edit <++> vBorder <++> hLimit hmax_lst lst) 
+        >>= \app ->
+
+    newFocusGroup >>= \fg ->
+    addToFocusGroup fg edit >>
+    newCollection >>= \col ->
+    addToCollection col app fg >>
+    return (MainUI edit conv lst fg col)
+
+
 main =
-    putStrLn "User name? (No more than 10 chars; ':' is invalid)" >>
-    take 10 `fmap` getLine >>= \me ->
+    putStrLn ("User name? (No more than " ++ show hmax_name ++
+        " chars; ':' is invalid)") >>
+    take hmax_name `fmap` getLine >>= \me ->
     if any (== ':') me || null me then exitSuccess
     else readFile conf_name >>= \c ->
          declare_fanout (get_cconf c) >>= \fo ->
 
-         -- compose ui
-         editWidget >>= \edit ->
-         setup_edit_handler fo me edit >>
-         newList def_attr >>= \lst ->
-         setup_list_handler lst >>
-         (vLimit 26 =<< centered =<< vLimit 25 =<< vBox lst edit) >>=
-             bordered >>= \cen ->
-         newFocusGroup >>= \fg ->
-         setup_fg_handler (conn fo) fg >>
-         addToFocusGroup fg edit >>
-         newCollection >>= \col ->
-         addToCollection col cen fg >>
-
-         consumeMsgs (chan fo) (queueName $ qopts fo) Ack (consume_msg lst) >>
-         runUi col defaultContext
+         compose_ui >>= \ui ->
+         setup_edit_handler fo me (edit ui) >>
+         setup_list_handler (conv ui) >>
+         setup_fg_handler (conn fo) (fg ui) >>
+         consumeMsgs (chan fo) (queueName $ qopts fo) Ack 
+             (consume_msg ui) >>
+         runUi (col ui) defaultContext
 
 
 
@@ -120,7 +142,7 @@ setup_fg_handler conn this =
 setup_list_handler :: Widget (List String FormattedText) -> IO ()
 setup_list_handler this =
     this `onItemAdded` \(NewItemEvent i _ _) ->
-        if i >= 24 then 
+        if i >= vmax_app - 2 then 
             removeFromList this 0 >> return ()
         else return ()
 
@@ -134,14 +156,13 @@ produce_msg fo me this =
                    , msgDeliveryMode = Just NonPersistent } >>
         setEditText this (T.pack "")
 
-consume_msg :: Widget (List String FormattedText) -> (Message, Envelope) 
+consume_msg :: MainUI -> (Message, Envelope) 
                -> IO ()
-consume_msg this (m, e) = 
+consume_msg ui (m, e) = 
     let (name, _:msg) = span (/= ':') (BL.unpack $ msgBody m)
         s = name ++ ": " ++ msg
     in  ackEnv e >>
-        schedule (addToList this "" =<< plainText (T.pack s))
-
+        schedule (addToList (conv ui) "" =<< plainText (T.pack s))
 
 
 
