@@ -19,6 +19,8 @@ main =
     consumeMsgs chan (queueName $ dqopts drct) Ack (consume_msg fifo) >>
     produce_msg S.empty fifo drct
 
+-- Read FIFO, update the users list which is then converted to the format
+-- "user1:user2:user3" and finally published to client.
 produce_msg :: S.Set String -> Chan String -> Direct -> IO ()
 produce_msg users fifo drct =
     readChan fifo >>= \str ->
@@ -26,13 +28,15 @@ produce_msg users fifo drct =
                      '+' -> S.insert (tail str) users
                      '-' -> S.delete (tail str) users
                      _ -> users
-        s = L.intercalate ":" (S.toAscList users')
+        s = L.intercalate ":" (S.toList users')
     in  publishMsg (dchan drct) (exchangeName $ dxopts drct) bkey_client
             newMsg { msgBody = BL.pack s
                    , msgDeliveryMode = Just NonPersistent } >>
     produce_msg users' fifo drct
 
 
+-- Consume client logon/logoff messges in the format of ":+user" or ":-user".
+-- Write FIFO the string without the leading ':'.
 consume_msg :: Chan String -> (Message, Envelope) -> IO ()
 consume_msg fifo (m, e) = 
     let s = BL.unpack $ msgBody m

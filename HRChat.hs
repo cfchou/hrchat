@@ -39,8 +39,9 @@ compose_ui =
     newList def_attr >>= \conv ->
     newList def_attr >>= \lst ->
 
+    (vBox lst =<< plainText (T.pack "ESC to quit")) >>= \right ->
     (bordered =<< vLimit vmax_app =<< 
-        vBox conv edit <++> vBorder <++> hLimit hmax_lst lst) 
+        vBox conv edit <++> vBorder <++> hLimit hmax_lst right) 
         >>= \app ->
 
     newFocusGroup >>= \fg ->
@@ -77,11 +78,14 @@ main =
          logon_msg drct True me >>
          runUi (col ui) defaultContext
 
-
+-- When Edit widget receives Enter:
+-- Publish text in the widget.
 setup_edit_handler :: Fanout -> String -> Widget Edit -> IO ()
 setup_edit_handler fo me this =
     this `onActivate` produce_msg fo me >> return ()
 
+-- When FocusGroup gets keyboard input:
+-- Quit the applicatioin if it's ESC; Otherwise forward down to Edit Widget.
 setup_fg_handler :: Direct -> String -> Widget FocusGroup -> IO ()
 setup_fg_handler drct me this =
     this `onKeyPressed` (\_ k _ ->
@@ -90,6 +94,8 @@ setup_fg_handler drct me this =
             closeConnection (dconn drct) >> exitSuccess
         else return False)
 
+-- When Conversation list gets updated: 
+-- Maintain visible region(scroll up) if neccesary.
 setup_conv_handler :: Widget (List String FormattedText) -> IO ()
 setup_conv_handler this =
     this `onItemAdded` \(NewItemEvent i _ _) ->
@@ -97,15 +103,8 @@ setup_conv_handler this =
             removeFromList this 0 >> return ()
         else return ()
 
--- send server logon or logoff msg
-logon_msg :: Direct -> Bool -> String -> IO ()
-logon_msg drct onoff me =
-    let s = ':' : (if onoff then '+' : me else '-' : me)
-    in  publishMsg (dchan drct) (exchangeName $ dxopts drct) bkey_server
-            newMsg { msgBody = BL.pack s
-                   , msgDeliveryMode = Just NonPersistent }
- 
 
+-- Publish(fanout) chat messages in the format of "myname:msg".
 produce_msg :: Fanout -> String -> Widget Edit -> IO ()
 produce_msg fo me this =
     getEditText this >>= \txt ->
@@ -115,6 +114,9 @@ produce_msg fo me this =
                    , msgDeliveryMode = Just NonPersistent } >>
         setEditText this (T.pack "")
 
+
+-- Consume(fanout) chat messages in the format of "myname:msg".
+-- Schedule for main thread to update UI for conversation list accordingly.
 consume_msg :: MainUI -> (Message, Envelope) -> IO ()
 consume_msg ui (m, e) = 
     let (name, _:msg) = span (/= ':') (BL.unpack $ msgBody m)
@@ -122,10 +124,21 @@ consume_msg ui (m, e) =
     in  ackEnv e >>
         schedule (addToList (conv ui) "" =<< plainText (T.pack s))
 
+
+-- Publish logon/logoff msg to server in the format of ":+user" or ":-user"
+logon_msg :: Direct -> Bool -> String -> IO ()
+logon_msg drct onoff me =
+    let s = ':' : (if onoff then '+' : me else '-' : me)
+    in  publishMsg (dchan drct) (exchangeName $ dxopts drct) bkey_server
+            newMsg { msgBody = BL.pack s
+                   , msgDeliveryMode = Just NonPersistent }
+
+
+-- Consume user list messges from server (format: "user1:user2:user3").
+-- Schedule for main thread to update UI for user list accordingly.
 consume_msg_direct :: MainUI -> (Message, Envelope) -> IO ()
 consume_msg_direct ui (m, e) = 
     let str = BL.unpack $ msgBody m
-        -- format: "user1:user2:user3"
         users s ss = if null s then ss  
                      else let (x, xs) = break (== ':') s 
                               s' = if length xs > 1 then tail xs else []
