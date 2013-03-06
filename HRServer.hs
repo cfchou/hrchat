@@ -1,7 +1,8 @@
 
 import System.IO
 import System.Posix.Signals
-import System.Exit ( exitSuccess )
+import System.Posix.Process
+import System.Exit -- ( exitSuccess )
 import Control.Concurrent.Chan
 import qualified Data.List as L
 import qualified Data.Set as S
@@ -12,6 +13,8 @@ import HRUtil
 conf_name = "test.conf"
 
 main =
+    daemonize $
+    putStrLn "Server starts ......" >>
     readFile conf_name >>= \c ->
     connect (get_cconf c) >>= \conn ->
     installHandler sigTERM (Catch $ sigterm_handler "sigTERM" conn) Nothing >>
@@ -25,11 +28,20 @@ main =
     produce_msg S.empty fifo drct
 
 
+daemonize :: IO () -> IO ()
+daemonize main' = forkProcess child1 >>
+                  exitImmediately ExitSuccess
+    where child1 = createSession >>
+                   forkProcess main' >>
+                   exitImmediately ExitSuccess
+                    
+
 sigterm_handler :: String -> Connection -> IO ()
 sigterm_handler reason conn =
-    (putStrLn $ "Exit for " ++ reason) >>
+    (putStrLn $ "Server exits for " ++ reason) >>
     closeConnection conn >>
     raiseSignal sigKILL
+
 
 -- Read FIFO, update the users list which is then converted to the format
 -- "user1:user2:user3" and finally published to client.
