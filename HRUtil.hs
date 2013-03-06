@@ -54,13 +54,11 @@ data Fanout = Fanout { fconn :: Connection
                      , fxopts :: ExchangeOpts
                      }
 
-connect :: M.Map String String -> IO (Connection, Channel)
+connect :: M.Map String String -> IO Connection
 connect m =
     case validation of
         Nothing -> fail "Error: hostname/vhost/user/password?"
-        Just (h, v, u, p) -> openConnection h v u p >>= \conn ->
-                             openChannel conn >>= \chan ->
-                             return (conn, chan)
+        Just (h, v, u, p) -> openConnection h v u p
     where validation = M.lookup "hostname" m >>= \hostname ->  
                        M.lookup "vhost" m >>= \vhost ->
                        M.lookup "user" m >>= \user ->

@@ -17,6 +17,7 @@ import Graphics.Vty.Attributes
 import Graphics.Vty.Widgets.All
 import qualified Data.Text as T
 import HRUtil
+import Debug.Trace
 
 conf_name = "test.conf"
 
@@ -55,10 +56,13 @@ main =
     take hmax_name `fmap` getLine >>= \me ->
     if any (== ':') me || null me then exitSuccess
     else readFile conf_name >>= \c ->
-         connect (get_cconf c) >>= \(conn, chan) ->
+         connect (get_cconf c) >>= \conn ->
+         -- for chat
+         openChannel conn >>= \chan ->
          declare_fanout conn chan >>= \fo ->
-         declare_ctrl_client conn chan >>= \drct ->
-         logon_msg drct True me >>
+         -- for ctrl
+         openChannel conn >>= \chan_ctl ->
+         declare_ctrl_client conn chan_ctl >>= \drct ->
 
          compose_ui >>= \ui ->
          setup_edit_handler fo me (edit ui) >>
@@ -67,8 +71,10 @@ main =
 
          consumeMsgs chan (queueName $ fqopts fo) Ack 
              (consume_msg ui) >>
-         consumeMsgs chan (queueName $ dqopts drct) Ack 
+         consumeMsgs chan_ctl (queueName $ dqopts drct) Ack 
              (consume_msg_direct ui) >>
+
+         logon_msg drct True me >>
          runUi (col ui) defaultContext
 
 
@@ -117,6 +123,19 @@ consume_msg ui (m, e) =
         schedule (addToList (conv ui) "" =<< plainText (T.pack s))
 
 consume_msg_direct :: MainUI -> (Message, Envelope) -> IO ()
-consume_msg_direct ui (m, e) = ackEnv e
+consume_msg_direct ui (m, e) = 
+    let str = BL.unpack $ msgBody m
+        -- format: "user1:user2:user3"
+        users s ss = if null s then ss  
+                     else let (x, xs) = break (== ':') s 
+                              s' = if length xs > 1 then tail xs else []
+                          in  users s' (x : ss)
+        lst' = lst ui
+    in  --putStrLn s >>
+        ackEnv e >>
+        schedule (
+            clearList lst' >>
+            forM_ (users str []) (\u ->
+                addToList lst' "" =<< plainText (T.pack u)))
 
 
