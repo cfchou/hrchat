@@ -42,7 +42,11 @@ ghc -o HRChat HRChat.hs
 ## Configure
 
 For RabbitMq, you will need to configure vhost, user name, user password and
+<<<<<<< HEAD
 setup a read-write permission for the user on the vhost. For example:
+=======
+setup read-write permission for the user on the vhost. For example:
+>>>>>>> 019e15777fd0efa74f1448f413486e190da2a910
 
 ```
 rabbitmqctl add_vhost /hrchat
