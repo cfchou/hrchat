@@ -29,8 +29,8 @@ data MainUI = MainUI { edit :: Widget Edit
                      }
 
 -- standard 80 * 40 terminal should be fine
-hmax_lst = 20 -- terminal should be more than 3 times wider than this
-hmax_name = hmax_lst - 10
+hmax_lst = 27 -- terminal should be more than 3 times wider than this
+hmax_name = hmax_lst - 2
 vmax_app = 30 -- terminal should be at least this height
 
 compose_ui :: IO MainUI

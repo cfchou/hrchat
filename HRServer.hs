@@ -2,7 +2,7 @@
 import System.IO
 import System.Environment
 import System.Posix.Signals
-import System.Posix.Process
+-- import System.Posix.Process
 import System.Exit -- ( exitSuccess )
 import Control.Concurrent.Chan
 import qualified Data.List as L
