@@ -1,5 +1,6 @@
 
 import System.IO
+import System.Environment
 import System.Posix.Signals
 import System.Posix.Process
 import System.Exit -- ( exitSuccess )
@@ -10,16 +11,21 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import Network.AMQP
 import HRUtil
 
-conf_name = "test.conf"
-
 main =
-    daemonize $
-    putStrLn "Server starts ......" >>
-    readFile conf_name >>= \c ->
-    connect (get_cconf c) >>= \conn ->
-    installHandler sigTERM (Catch $ sigterm_handler "sigTERM" conn) Nothing >>
-    installHandler sigQUIT (Catch $ sigterm_handler "sigQUIT" conn) Nothing >>
-    installHandler sigINT (Catch $ sigterm_handler "sigINT" conn) Nothing >>
+    getArgs >>= \args ->
+    if length args < 1 then
+        putStrLn "Please give config file name."
+    else 
+        -- daemonize $
+        putStrLn "Server starts ......" >>
+        readFile (head args) >>= \c ->
+        connect (get_cconf c) >>= \conn ->
+        installHandler sigTERM (Catch $ sigterm_handler "sigTERM" conn) 
+            Nothing >>
+        installHandler sigQUIT (Catch $ sigterm_handler "sigQUIT" conn) 
+            Nothing >>
+        installHandler sigINT (Catch $ sigterm_handler "sigINT" conn) 
+            Nothing >>
 
     openChannel conn >>= \chan ->
     declare_ctrl_server conn chan >>= \drct ->
@@ -29,16 +35,16 @@ main =
 
 
 daemonize :: IO () -> IO ()
-daemonize main' = forkProcess child1 >>
+daemonize main' = forkProcess child >>
                   exitImmediately ExitSuccess
-    where child1 = createSession >>
+    where child = createSession >>
                    forkProcess main' >>
                    exitImmediately ExitSuccess
                     
 
 sigterm_handler :: String -> Connection -> IO ()
 sigterm_handler reason conn =
-    (putStrLn $ "Server exits for " ++ reason) >>
+    (putStrLn $ "Server exits because " ++ reason) >>
     closeConnection conn >>
     raiseSignal sigKILL
 

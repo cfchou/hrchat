@@ -19,7 +19,7 @@ import qualified Data.Text as T
 import HRUtil
 import Debug.Trace
 
-conf_name = "test.conf"
+conf_name = "hrchat.conf"
 
 data MainUI = MainUI { edit :: Widget Edit
                      , conv :: Widget (List String FormattedText)
