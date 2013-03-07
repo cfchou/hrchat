@@ -2,8 +2,9 @@
 import System.IO
 import System.Environment
 import System.Posix.Signals
--- import System.Posix.Process
-import System.Exit -- ( exitSuccess )
+import System.Posix.Process
+import System.Posix.IO
+import System.Exit
 import Control.Concurrent.Chan
 import qualified Data.List as L
 import qualified Data.Set as S
@@ -11,15 +12,19 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import Network.AMQP
 import HRUtil
 
+-- pidfile = "/var/run/hrchat.pid"
+
 main =
     getArgs >>= \args ->
     if length args < 1 then
         putStrLn "Please give config file name."
     else 
-        -- daemonize $
+        -- daemonize >>
+        -- (writeFile pidfile . show =<< getProcessID) >>
         putStrLn "Server starts ......" >>
         readFile (head args) >>= \c ->
         connect (get_cconf c) >>= \conn ->
+
         installHandler sigTERM (Catch $ sigterm_handler "sigTERM" conn) 
             Nothing >>
         installHandler sigQUIT (Catch $ sigterm_handler "sigQUIT" conn) 
@@ -27,20 +32,25 @@ main =
         installHandler sigINT (Catch $ sigterm_handler "sigINT" conn) 
             Nothing >>
 
-    openChannel conn >>= \chan ->
-    declare_ctrl_server conn chan >>= \drct ->
-    newChan >>= \fifo ->
-    consumeMsgs chan (queueName $ dqopts drct) Ack (consume_msg fifo) >>
-    produce_msg S.empty fifo drct
+        openChannel conn >>= \chan ->
+        declare_ctrl_server conn chan >>= \drct ->
+        newChan >>= \fifo ->
+        consumeMsgs chan (queueName $ dqopts drct) Ack (consume_msg fifo) >>
+        produce_msg S.empty fifo drct
 
-
-daemonize :: IO () -> IO ()
-daemonize main' = forkProcess child >>
+{--
+daemonize :: IO ()
+daemonize = forkProcess child1 >>
                   exitImmediately ExitSuccess
-    where child = createSession >>
-                   forkProcess main' >>
-                   exitImmediately ExitSuccess
-                    
+    where child1 = createSession >>
+                  forkProcess child2 >>
+                  exitImmediately ExitSuccess
+          child2 = mapM_ closeFd [stdInput, stdOutput, stdError] >>
+                   openFd "/dev/null" ReadWrite Nothing 
+                       defaultFileFlags >>= \nullfd ->
+                   mapM_ (dupTo nullfd) [stdInput, stdOutput, stdError] >>
+                   closeFd nullfd
+--}
 
 sigterm_handler :: String -> Connection -> IO ()
 sigterm_handler reason conn =

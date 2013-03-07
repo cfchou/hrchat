@@ -78,34 +78,19 @@ password = chatty
 
 #### Server
 
-To run in the background as a daemon:
-
-```
-start-stop-daemon -S "$PWD"/hrchat.conf -n HRServer -a "$PWD"/HRServer
-```
-
-Terminate the daemon:
-
-```
-start-stop-daemon -K -n HRServer
-```
-
-Or it can run directly as a foregroud application:
 ```
 ./HRServer hrchat.conf
 ```
-```
+
 Ctrl-C to quit
-```
 
 #### Client
+
 ```
 ./HRChat hrchat.conf
 ```
 
-```
 Press ESC to quit.
-```
 
 ## License
 MIT
