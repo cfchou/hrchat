@@ -12,7 +12,7 @@ A chat client and server in Haskell using RabbitMq.
 In addition to the latest Haskell Platform, you need to install package amqp:
 
 ```
-cabal install AMQP
+cabal install amqp
 ```
 
 ```
@@ -28,7 +28,7 @@ On top of the latest Haskell Platform, you will need to install packages vty-ui
 and amqp . Specifically,
 
 ```
-cabal install AMQP
+cabal install amqp
 ```
 
 ```
@@ -56,7 +56,7 @@ rabbitmqctl add_user hrchat chatty
 rabbitmqctl set_permissions -p /hrchat hrchat ".*" ".*" ".*"
 ```
 
-Then update "hrchat.conf" accordingly. For example:
+Then update ```hrchat.conf``` accordingly. For example:
 
 ```
 hostname = YOUR_SERVER_IP

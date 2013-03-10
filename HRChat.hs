@@ -19,8 +19,6 @@ import qualified Data.Text as T
 import HRUtil
 import Debug.Trace
 
-conf_name = "hrchat.conf"
-
 data MainUI = MainUI { edit :: Widget Edit
                      , conv :: Widget (List String FormattedText)
                      , lst :: Widget (List String FormattedText)
@@ -52,31 +50,37 @@ compose_ui =
 
 
 main =
-    putStrLn ("User name? (No more than " ++ show hmax_name ++
-        " chars; ':' is invalid)") >>
-    take hmax_name `fmap` getLine >>= \me ->
-    if any (== ':') me || null me then exitSuccess
-    else readFile conf_name >>= \c ->
-         connect (get_cconf c) >>= \conn ->
-         -- for chat
-         openChannel conn >>= \chan ->
-         declare_fanout conn chan >>= \fo ->
-         -- for ctrl
-         openChannel conn >>= \chan_ctl ->
-         declare_ctrl_client conn chan_ctl >>= \drct ->
+    getArgs >>= \args ->
+    if length args < 1 then
+        putStrLn "Please give config file name."
+    else 
+        putStrLn ("User name? (No more than " ++ show hmax_name ++
+            " chars; ':' is invalid)") >>
+        take hmax_name `fmap` getLine >>= \me ->
+        if any (== ':') me || null me then 
+            exitSuccess
+        else
+            readFile (head args) >>= \c ->
+            connect (get_cconf c) >>= \conn ->
+            -- for chat
+            openChannel conn >>= \chan ->
+            declare_fanout conn chan >>= \fo ->
+            -- for ctrl
+            openChannel conn >>= \chan_ctl ->
+            declare_ctrl_client conn chan_ctl >>= \drct ->
 
-         compose_ui >>= \ui ->
-         setup_edit_handler fo me (edit ui) >>
-         setup_conv_handler (conv ui) >>
-         setup_fg_handler drct me (fg ui) >>
+            compose_ui >>= \ui ->
+            setup_edit_handler fo me (edit ui) >>
+            setup_conv_handler (conv ui) >>
+            setup_fg_handler drct me (fg ui) >>
 
-         consumeMsgs chan (queueName $ fqopts fo) Ack 
-             (consume_msg ui) >>
-         consumeMsgs chan_ctl (queueName $ dqopts drct) Ack 
-             (consume_msg_direct ui) >>
+            consumeMsgs chan (queueName $ fqopts fo) Ack 
+                (consume_msg ui) >>
+            consumeMsgs chan_ctl (queueName $ dqopts drct) Ack 
+                (consume_msg_direct ui) >>
 
-         logon_msg drct True me >>
-         runUi (col ui) defaultContext
+            logon_msg drct True me >>
+            runUi (col ui) defaultContext
 
 -- When Edit widget receives Enter:
 -- Publish text in the widget.
